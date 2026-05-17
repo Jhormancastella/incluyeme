@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <meta name="description" content="Panel de administración · Incluyeme">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#fafafa">
+  <title>Admin · Incluyeme</title>
+
+  <link rel="icon" type="image/png" href="assets/images/logo.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <link rel="stylesheet" href="assets/css/01-variables.css">
+  <link rel="stylesheet" href="assets/css/02-reset.css">
+  <link rel="stylesheet" href="assets/css/03-layout.css">
+  <link rel="stylesheet" href="assets/css/04-components.css">
+  <link rel="stylesheet" href="assets/css/05-forms.css">
+  <link rel="stylesheet" href="assets/css/06-gallery.css">
+  <link rel="stylesheet" href="assets/css/07-admin.css">
+  <link rel="stylesheet" href="assets/css/08-animations.css">
+  <link rel="stylesheet" href="assets/css/09-responsive.css">
+  <link rel="stylesheet" href="assets/css/10-admin-panel.css">
+  <style>
+    /* Oculta login inmediatamente si hay sesión válida (antes del JS) */
+    html.ap-authed #apLoginWrap { display: none !important; }
+    html.ap-authed #apContent   { display: block !important; }
+  </style>
+
+  <!-- Evita flash de login si ya hay sesión activa -->
+  <script>
+    (function() {
+      try {
+        const raw = localStorage.getItem('inclusion_adminSession');
+        if (raw) {
+          const session = JSON.parse(raw);
+          const data = session._data || session;
+          if (data && data.expires && Date.now() < data.expires) {
+            document.documentElement.classList.add('ap-authed');
+          }
+        }
+      } catch(e) {}
+      document.documentElement.style.opacity = '0';
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- Skip link -->
+  <a href="#ap-main" class="skip-link"><i class="fas fa-arrow-down" aria-hidden="true"></i> Saltar al contenido</a>
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="ap-sidebar" id="apSidebar" aria-label="Navegación del panel">
+    <div class="ap-sidebar-header">
+      <a href="index.html" class="ap-brand" aria-label="Volver al sitio">
+        <img src="assets/images/logo.png" alt="Incluyeme" class="ap-brand-logo">
+        <div>
+          <span class="ap-brand-name">Incluyeme</span>
+          <span class="ap-brand-sub">Panel Admin</span>
+        </div>
+      </a>
+      <button class="ap-sidebar-close" id="apSidebarClose" aria-label="Cerrar menú">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <nav class="ap-nav" aria-label="Secciones del panel">
+      <button class="ap-nav-item active" data-section="dashboard">
+        <i class="fas fa-tachometer-alt"></i><span>Dashboard</span>
+      </button>
+      <button class="ap-nav-item" data-section="contenido">
+        <i class="fas fa-pen-to-square"></i><span>Contenido</span>
+      </button>
+      <button class="ap-nav-item" data-section="proyectos">
+        <i class="fas fa-rocket"></i><span>Proyectos</span>
+      </button>
+      <button class="ap-nav-item" data-section="recursos">
+        <i class="fas fa-map-location-dot"></i><span>Recursos</span>
+      </button>
+      <button class="ap-nav-item" data-section="galeria">
+        <i class="fas fa-images"></i><span>Galería</span>
+      </button>
+      <button class="ap-nav-item" data-section="videos">
+        <i class="fas fa-video"></i><span>Videos</span>
+      </button>
+      <button class="ap-nav-item" data-section="configuracion">
+        <i class="fas fa-cog"></i><span>Configuración</span>
+      </button>
+    </nav>
+
+    <div class="ap-sidebar-footer">
+      <div class="ap-user-info" id="apUserInfo"></div>
+      <button class="ap-logout-btn" id="apLogoutBtn">
+        <i class="fas fa-right-from-bracket"></i><span>Cerrar sesión</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Sidebar overlay (mobile) -->
+  <div class="ap-overlay" id="apOverlay" aria-hidden="true"></div>
+
+  <!-- ===== MAIN LAYOUT ===== -->
+  <div class="ap-layout">
+
+    <!-- Topbar -->
+    <header class="ap-topbar">
+      <button class="ap-menu-btn" id="apMenuBtn" aria-label="Abrir menú" aria-expanded="false">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="ap-topbar-title" id="apTopbarTitle">Dashboard</div>
+      <div class="ap-topbar-actions">
+        <button class="ap-topbar-btn" id="apThemeToggle" aria-label="Cambiar tema">
+          <i class="fas fa-moon"></i>
+        </button>
+        <a href="index.html" class="ap-topbar-btn" aria-label="Ver sitio" title="Ver sitio">
+          <i class="fas fa-arrow-up-right-from-square"></i>
+        </a>
+      </div>
+    </header>
+
+    <!-- Main content -->
+    <main class="ap-main" id="ap-main">
+
+      <!-- ===== LOGIN ===== -->
+      <div class="ap-login-wrap" id="apLoginWrap">
+        <div class="ap-login-card">
+          <div class="ap-login-logo">
+            <img src="assets/images/logo.png" alt="Incluyeme">
+            <h1>Incluyeme</h1>
+            <p>Panel de Administración</p>
+          </div>
+          <form class="ap-login-form" id="apLoginForm" novalidate>
+            <div class="form-group">
+              <label for="apEmail"><i class="fas fa-envelope"></i> Email</label>
+              <input type="email" id="apEmail" placeholder="admin@municipio.local" autocomplete="email" required>
+            </div>
+            <div class="form-group">
+              <label for="apPassword"><i class="fas fa-lock"></i> Contraseña</label>
+              <div class="ap-input-eye">
+                <input type="password" id="apPassword" placeholder="••••••••" autocomplete="current-password" required>
+                <button type="button" class="ap-eye-btn" id="apEyeBtn" aria-label="Mostrar contraseña">
+                  <i class="fas fa-eye"></i>
+                </button>
+              </div>
+            </div>
+            <div id="apLoginError" class="ap-login-error" role="alert" aria-live="polite"></div>
+            <button type="submit" class="btn btn-full" id="apLoginSubmit">
+              <i class="fas fa-right-to-bracket"></i> Iniciar sesión
+            </button>
+          </form>
+          <p class="ap-login-hint">
+            <i class="fas fa-circle-info"></i>
+            Credenciales por defecto: <code>admin@municipio.local</code> / <code>Admin2024!</code>
+          </p>
+        </div>
+      </div>
+
+      <!-- ===== PANEL CONTENT ===== -->
+      <div class="ap-content" id="apContent" hidden>
+
+        <!-- DASHBOARD -->
+        <section class="ap-section active" id="sec-dashboard">
+          <div class="ap-section-header">
+            <h2><i class="fas fa-tachometer-alt"></i> Dashboard</h2>
+          </div>
+          <div class="ap-stats-grid" id="apStatsGrid"></div>
+          <div class="ap-dashboard-grid">
+            <div class="ap-card">
+              <div class="ap-card-header">
+                <h3><i class="fas fa-rocket"></i> Proyectos recientes</h3>
+                <button class="btn btn-sm btn-secondary" data-goto="proyectos">Ver todos</button>
+              </div>
+              <div id="dashProyectos"></div>
+            </div>
+            <div class="ap-card">
+              <div class="ap-card-header">
+                <h3><i class="fas fa-images"></i> Galería reciente</h3>
+                <button class="btn btn-sm btn-secondary" data-goto="galeria">Ver todos</button>
+              </div>
+              <div id="dashGaleria"></div>
+            </div>
+            <div class="ap-card">
+              <div class="ap-card-header">
+                <h3><i class="fas fa-video"></i> Videos recientes</h3>
+                <button class="btn btn-sm btn-secondary" data-goto="videos">Ver todos</button>
+              </div>
+              <div id="dashVideos"></div>
+            </div>
+            <div class="ap-card">
+              <div class="ap-card-header">
+                <h3><i class="fas fa-map-location-dot"></i> Recursos recientes</h3>
+                <button class="btn btn-sm btn-secondary" data-goto="recursos">Ver todos</button>
+              </div>
+              <div id="dashRecursos"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CONTENIDO PRINCIPAL -->
+        <section class="ap-section" id="sec-contenido">
+          <div class="ap-section-header">
+            <h2><i class="fas fa-pen-to-square"></i> Contenido principal</h2>
+          </div>
+
+          <div class="ap-card">
+            <div class="ap-card-header"><h3><i class="fas fa-heading"></i> Hero</h3></div>
+            <div class="ap-card-body">
+              <form id="formHero" class="ap-form">
+                <div class="ap-form-grid">
+                  <div class="form-group full-width">
+                    <label for="heroTitle">Título principal</label>
+                    <input type="text" id="heroTitle" placeholder="Construyendo un municipio más inclusivo">
+                  </div>
+                  <div class="form-group full-width">
+                    <label for="heroSubtitle">Subtítulo</label>
+                    <textarea id="heroSubtitle" rows="2" placeholder="Descripción breve..."></textarea>
+                  </div>
+                </div>
+                <div class="ap-form-actions">
+                  <button type="submit" class="btn"><i class="fas fa-save"></i> Guardar hero</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="ap-card">
+            <div class="ap-card-header"><h3><i class="fas fa-star"></i> Banner destacado</h3></div>
+            <div class="ap-card-body">
+              <form id="formFeatured" class="ap-form">
+                <div class="ap-form-grid">
+                  <div class="form-group">
+                    <label for="featuredType">Tipo</label>
+                    <select id="featuredType">
+                      <option value="image">Imagen</option>
+                      <option value="video">Video (YouTube)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="featuredEnabled">Estado</label>
+                    <select id="featuredEnabled">
+                      <option value="true">Activo</option>
+                      <option value="false">Inactivo</option>
+                    </select>
+                  </div>
+                  <div class="form-group full-width">
+                    <label for="featuredUrl">URL (imagen o video YouTube)</label>
+                    <input type="url" id="featuredUrl" placeholder="https://...">
+                  </div>
+                  <div class="form-group">
+                    <label for="featuredTitle">Título del banner</label>
+                    <input type="text" id="featuredTitle" placeholder="Destacado del mes">
+                  </div>
+                  <div class="form-group">
+                    <label for="featuredDesc">Descripción</label>
+                    <input type="text" id="featuredDesc" placeholder="Descripción breve...">
+                  </div>
+                </div>
+                <div class="ap-form-actions">
+                  <button type="submit" class="btn"><i class="fas fa-save"></i> Guardar banner</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="ap-card">
+            <div class="ap-card-header"><h3><i class="fas fa-chart-bar"></i> Estadísticas</h3></div>
+            <div class="ap-card-body">
+              <form id="formStats" class="ap-form">
+                <div id="statsEditor"></div>
+                <div class="ap-form-actions">
+                  <button type="submit" class="btn"><i class="fas fa-save"></i> Guardar estadísticas</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- PROYECTOS -->
+        <section class="ap-section" id="sec-proyectos">
+          <div class="ap-section-header">
+            <h2><i class="fas fa-rocket"></i> Proyectos</h2>
+            <button class="btn" id="btnNuevoProyecto"><i class="fas fa-plus"></i> Nuevo proyecto</button>
+          </div>
+          <div class="ap-card">
+            <div class="ap-card-body ap-card-body--flush">
+              <div class="ap-table-toolbar">
+                <input type="search" class="ap-search" id="searchProyectos" placeholder="Buscar proyectos...">
+              </div>
+              <div class="ap-table-wrap">
+                <table class="ap-table" id="tableProyectos">
+                  <thead>
+                    <tr>
+                      <th>Imagen</th>
+                      <th>Título</th>
+                      <th>Etiqueta</th>
+                      <th>Fecha</th>
+                      <th>Destacado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyProyectos"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- RECURSOS -->
+        <section class="ap-section" id="sec-recursos">
+          <div class="ap-section-header">
+            <h2><i class="fas fa-map-location-dot"></i> Recursos</h2>
+            <button class="btn" id="btnNuevoRecurso"><i class="fas fa-plus"></i> Nuevo recurso</button>
+          </div>
+          <div class="ap-card">
+            <div class="ap-card-body ap-card-body--flush">
+              <div class="ap-table-toolbar">
+                <input type="search" class="ap-search" id="searchRecursos" placeholder="Buscar recursos...">
+              </div>
+              <div class="ap-table-wrap">
+                <table class="ap-table" id="tableRecursos">
+                  <thead>
+                    <tr>
+                      <th>Título</th>
+                      <th>Etiqueta</th>
+                      <th>Dirección</th>
+                      <th>Teléfono</th>
+                      <th>Horario</th>
+                      <th>Destacado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyRecursos"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- GALERÍA -->
+        <section class="ap-section" id="sec-galeria">
+          <div class="ap-section-header">
+            <h2><i class="fas fa-images"></i> Galería</h2>
+            <button class="btn" id="btnNuevaImagen"><i class="fas fa-plus"></i> Nueva imagen</button>
+          </div>
+          <div class="ap-card">
+            <div class="ap-card-body ap-card-body--flush">
+              <div class="ap-table-toolbar">
+                <input type="search" class="ap-search" id="searchGaleria" placeholder="Buscar imágenes...">
+                <select class="ap-filter-select" id="filterGaleria">
+                  <option value="">Todas las categorías</option>
+                  <option value="Eventos">Eventos</option>
+                  <option value="Infraestructura">Infraestructura</option>
+                  <option value="Capacitación">Capacitación</option>
+                  <option value="Testimonios">Testimonios</option>
+                  <option value="Videos">Videos</option>
+                </select>
+              </div>
+              <div class="ap-table-wrap">
+                <table class="ap-table" id="tableGaleria">
+                  <thead>
+                    <tr>
+                      <th>Vista</th>
+                      <th>Título</th>
+                      <th>Categoría</th>
+                      <th>Tipo</th>
+                      <th>Fecha</th>
+                      <th>Destacado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyGaleria"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIDEOS -->
+        <section class="ap-section" id="sec-videos">
+          <div class="ap-section-header">
+            <h2><i class="fas fa-video"></i> Videos</h2>
+            <button class="btn" id="btnNuevoVideo"><i class="fas fa-plus"></i> Nuevo video</button>
+          </div>
+          <div class="ap-card">
+            <div class="ap-card-body ap-card-body--flush">
+              <div class="ap-table-toolbar">
+                <input type="search" class="ap-search" id="searchVideos" placeholder="Buscar videos...">
+                <select class="ap-filter-select" id="filterVideos">
+                  <option value="">Todas las categorías</option>
+                  <option value="Tutoriales">Tutoriales</option>
+                  <option value="Eventos">Eventos</option>
+                  <option value="Testimonios">Testimonios</option>
+                  <option value="Institucional">Institucional</option>
+                </select>
+              </div>
+              <div class="ap-table-wrap">
+                <table class="ap-table" id="tableVideos">
+                  <thead>
+                    <tr>
+                      <th>Miniatura</th>
+                      <th>Título</th>
+                      <th>Plataforma</th>
+                      <th>Categoría</th>
+                      <th>Fecha</th>
+                      <th>Destacado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyVideos"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CONFIGURACIÓN -->
+        <section class="ap-section" id="sec-configuracion">
+          <div class="ap-section-header">
+            <h2><i class="fas fa-cog"></i> Configuración</h2>
+          </div>
+
+          <div class="ap-config-grid">
+            <div class="ap-card">
+              <div class="ap-card-header"><h3><i class="fas fa-key"></i> Credenciales de acceso</h3></div>
+              <div class="ap-card-body">
+                <form id="formCredenciales" class="ap-form">
+                  <p id="cfgCurrentEmail" style="font-size:.85rem;color:var(--color-text-muted);margin-bottom:.5rem"></p>
+                  <div class="form-group">
+                    <label for="cfgEmail">Nuevo email</label>
+                    <input type="email" id="cfgEmail" placeholder="admin@municipio.local">
+                  </div>
+                  <div class="form-group">
+                    <label for="cfgPass">Nueva contraseña</label>
+                    <input type="password" id="cfgPass" placeholder="Mínimo 8 caracteres">
+                  </div>
+                  <div class="form-group">
+                    <label for="cfgPassConfirm">Confirmar contraseña</label>
+                    <input type="password" id="cfgPassConfirm" placeholder="Repetir contraseña">
+                  </div>
+                  <div class="ap-form-actions">
+                    <button type="submit" class="btn"><i class="fas fa-save"></i> Actualizar credenciales</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <div class="ap-card">
+              <div class="ap-card-header"><h3><i class="fas fa-database"></i> Gestión de datos</h3></div>
+              <div class="ap-card-body">
+                <div class="ap-data-actions">
+                  <button class="ap-data-btn" id="btnExport">
+                    <i class="fas fa-download"></i>
+                    <span>Exportar JSON</span>
+                    <small>Descarga todos los datos</small>
+                  </button>
+                  <button class="ap-data-btn" id="btnImport">
+                    <i class="fas fa-upload"></i>
+                    <span>Importar JSON</span>
+                    <small>Restaurar desde archivo</small>
+                  </button>
+                  <button class="ap-data-btn ap-data-btn--danger" id="btnReset">
+                    <i class="fas fa-rotate-left"></i>
+                    <span>Restaurar defaults</span>
+                    <small>Borra todos los cambios</small>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /ap-content -->
+    </main>
+  </div><!-- /ap-layout -->
+
+  <!-- Toast container -->
+  <div id="toastContainer" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- ===== MODAL UNIVERSAL ===== -->
+  <div class="ap-modal" id="apModal" role="dialog" aria-modal="true" aria-labelledby="apModalTitle" hidden>
+    <div class="ap-modal-box" id="apModalBox">
+      <div class="ap-modal-header">
+        <h3 id="apModalTitle">Modal</h3>
+        <button class="ap-modal-close" id="apModalClose" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="ap-modal-body" id="apModalBody"></div>
+      <div class="ap-modal-footer" id="apModalFooter">
+        <button class="btn btn-secondary" id="apModalCancel">Cancelar</button>
+        <button class="btn" id="apModalConfirm">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="assets/js/admin-panel.js"></script>
+  <script>
+    // Fade-in de entrada
+    window.addEventListener('DOMContentLoaded', () => {
+      document.documentElement.style.transition = 'opacity 0.35s ease';
+      requestAnimationFrame(() => { document.documentElement.style.opacity = '1'; });
+    });
+  </script>
+</body>
+</html>

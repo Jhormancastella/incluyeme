@@ -1,12 +1,11 @@
 /**
  * admin-panel.js - Panel de Administración Dedicado
- * LocalStorage como capa de datos (migrable a Supabase)
- * Bugs corregidos: validaciones, filtros, extracción de IDs, destacado en recursos
+ * Datos desde Supabase
  */
 
-import { Storage, DATA_KEYS } from './storage.js';
 import { Auth } from './auth.js';
 import { Theme } from './theme.js';
+import { DBProyectos, DBRecursos, DBGaleria, DBVideos, DBContenido } from './db.js';
 import {
   escapeHtml, showToast, generateId, confirmDialog,
   extractYouTubeId, getYouTubeThumbnail,
@@ -14,11 +13,28 @@ import {
 } from './utils.js';
 import { getDefaultData } from './data-defaults.js';
 
-// ===== DATA LAYER (swap this for Supabase later) =====
-const DB = {
-  get:    (key, fb = []) => Storage.get(key, fb),
-  set:    (key, val)     => Storage.set(key, val),
-  remove: (key)          => Storage.remove(key),
+// ===== DATA LAYER — Supabase =====
+// Cache local para que render() sea síncrono después de cargar
+const Cache = {
+  proyectos: [], recursos: [], galeria: [], videos: [],
+  content: null,
+
+  async load() {
+    [this.proyectos, this.recursos, this.galeria, this.videos, this.content] = await Promise.all([
+      DBProyectos.getAll(),
+      DBRecursos.getAll(),
+      DBGaleria.getAll(),
+      DBVideos.getAll(),
+      DBContenido.get()
+    ]);
+  },
+
+  async reload(entity) {
+    if (entity === 'proyectos') this.proyectos = await DBProyectos.getAll();
+    if (entity === 'recursos')  this.recursos  = await DBRecursos.getAll();
+    if (entity === 'galeria')   this.galeria   = await DBGaleria.getAll();
+    if (entity === 'videos')    this.videos    = await DBVideos.getAll();
+  }
 };
 
 // ===== HELPERS =====
@@ -28,7 +44,7 @@ const qs = (sel, ctx = document) => ctx.querySelector(sel);
 const PROVIDER_LABELS = { youtube: 'YouTube', vimeo: 'Vimeo', facebook: 'Facebook' };
 const PROVIDER_COLORS = { youtube: 'ap-badge-rose', vimeo: 'ap-badge-blue', facebook: 'ap-badge-blue' };
 
-const GALERIA_CATS = ['Eventos', 'Infraestructura', 'Capacitación', 'Testimonios', 'Videos'];
+const GALERIA_CATS = ['Eventos', 'Infraestructura', 'Capacitación', 'Testimonios'];
 const VIDEO_CATS   = ['Tutoriales', 'Eventos', 'Testimonios', 'Institucional'];
 const PROJ_TAGS    = ['En ejecución', 'Buscando voluntarios', 'Inscripciones abiertas', 'Finalizado', 'Planificación'];
 const REC_TAGS     = ['Público', 'Privado', 'Gratuito', 'Atención presencial', 'Virtual'];
@@ -160,10 +176,10 @@ const Sections = {
   // ── DASHBOARD ──────────────────────────────────────────────────────────────
   dashboard: {
     render() {
-      const p = DB.get(DATA_KEYS.PROYECTOS, []);
-      const r = DB.get(DATA_KEYS.RECURSOS,  []);
-      const g = DB.get(DATA_KEYS.GALERIA,   []);
-      const v = DB.get(DATA_KEYS.VIDEOS,    []);
+      const p = Cache.proyectos;
+      const r = Cache.recursos;
+      const g = Cache.galeria;
+      const v = Cache.videos;
 
       $('apStatsGrid').innerHTML = [
         { icon:'fa-rocket',           label:'Proyectos', val:p.length, cls:'blue',   sec:'proyectos' },
@@ -204,7 +220,7 @@ const Sections = {
   // ── CONTENIDO ──────────────────────────────────────────────────────────────
   contenido: {
     render() {
-      const c = DB.get(DATA_KEYS.CONTENT, getDefaultData().content);
+      const c = Cache.content || getDefaultData().content;
       $('heroTitle').value    = c.hero?.title    || '';
       $('heroSubtitle').value = c.hero?.subtitle || '';
       $('featuredType').value    = c.featured?.type    || 'image';
@@ -236,23 +252,24 @@ const Sections = {
         </div>`).join('');
     },
     bindForms() {
-      $('formHero').addEventListener('submit', e => {
+      $('formHero').addEventListener('submit', async e => {
         e.preventDefault();
-        const c = DB.get(DATA_KEYS.CONTENT, getDefaultData().content);
+        const c = Cache.content || getDefaultData().content;
         const title    = $('heroTitle').value.trim();
         const subtitle = $('heroSubtitle').value.trim();
         if (!title) { showToast('El título del hero es obligatorio', 'error'); return; }
         c.hero = { ...c.hero, title, subtitle };
-        DB.set(DATA_KEYS.CONTENT, c);
+        await DBContenido.set(c);
+        Cache.content = c;
         showToast('Hero guardado ✓');
         document.dispatchEvent(new CustomEvent('content:updated'));
       });
 
-      $('formFeatured').addEventListener('submit', e => {
+      $('formFeatured').addEventListener('submit', async e => {
         e.preventDefault();
         const url = $('featuredUrl').value.trim();
         if (url && !isValidUrl(url)) { showToast('La URL del banner no es válida', 'error'); return; }
-        const c = DB.get(DATA_KEYS.CONTENT, getDefaultData().content);
+        const c = Cache.content || getDefaultData().content;
         c.featured = {
           ...c.featured,
           type:        $('featuredType').value,
@@ -261,14 +278,15 @@ const Sections = {
           title:       $('featuredTitle').value.trim(),
           description: $('featuredDesc').value.trim()
         };
-        DB.set(DATA_KEYS.CONTENT, c);
+        await DBContenido.set(c);
+        Cache.content = c;
         showToast('Banner guardado ✓');
         document.dispatchEvent(new CustomEvent('content:updated'));
       });
 
-      $('formStats').addEventListener('submit', e => {
+      $('formStats').addEventListener('submit', async e => {
         e.preventDefault();
-        const c = DB.get(DATA_KEYS.CONTENT, getDefaultData().content);
+        const c = Cache.content || getDefaultData().content;
         let valid = true;
         const updated = c.stats.map((s, i) => {
           const value = (document.querySelector(`[name="stat_value_${i}"]`)?.value || '').trim();
@@ -284,7 +302,8 @@ const Sections = {
         });
         if (!valid) { showToast('Valor y etiqueta son obligatorios en cada estadística', 'error'); return; }
         c.stats = updated;
-        DB.set(DATA_KEYS.CONTENT, c);
+        await DBContenido.set(c);
+        Cache.content = c;
         showToast('Estadísticas guardadas ✓');
         document.dispatchEvent(new CustomEvent('content:updated'));
       });
@@ -295,7 +314,7 @@ const Sections = {
   proyectos: {
     _filter: '',
     render() {
-      const items = DB.get(DATA_KEYS.PROYECTOS, []);
+      const items = Cache.proyectos;
       const q = this._filter.toLowerCase();
       const list = q ? items.filter(i =>
         i.titulo.toLowerCase().includes(q) || (i.tag||'').toLowerCase().includes(q) || (i.descripcion||'').toLowerCase().includes(q)
@@ -320,8 +339,7 @@ const Sections = {
       bindThumbFallbacks(tbody);
     },
     async openForm(id = null) {
-      const items = DB.get(DATA_KEYS.PROYECTOS, []);
-      const item  = id ? items.find(i => i.id === id) : null;
+      const item = id ? Cache.proyectos.find(i => i.id === id) : null;
       const tagsOpts = PROJ_TAGS.map(t => `<option value="${t}"${item?.tag===t?' selected':''}>${t}</option>`).join('');
       const body = `
         <div class="ap-form-grid">
@@ -343,7 +361,7 @@ const Sections = {
           </div>
           <div class="form-group full-width">
             <label>URL de imagen</label>
-            <input type="url" id="mImage" value="${escapeHtml(item?.image||'')}" placeholder="https://... o assets/images/proyectos/foto.jpg">
+            <input type="url" id="mImage" value="${escapeHtml(item?.image||'')}" placeholder="https://...">
           </div>
           <div class="form-group full-width">
             <label style="cursor:pointer"><input type="checkbox" id="mDestacado"${item?.destacado?' checked':''}> Mostrar en inicio como destacado</label>
@@ -355,8 +373,7 @@ const Sections = {
       if (!titulo) { showToast('El título es obligatorio', 'error'); return; }
       const imageUrl = $('mImage').value.trim();
       if (imageUrl && !isValidUrl(imageUrl)) { showToast('La URL de imagen no es válida', 'error'); return; }
-      const data = {
-        id:          id || generateId(),
+      const payload = {
         titulo,
         descripcion: $('mDesc').value.trim(),
         tag:         $('mTag').value,
@@ -364,27 +381,33 @@ const Sections = {
         image:       imageUrl,
         destacado:   $('mDestacado').checked
       };
-      if (id) { const idx = items.findIndex(i => i.id === id); if (idx !== -1) items[idx] = data; }
-      else items.unshift(data);
-      DB.set(DATA_KEYS.PROYECTOS, items);
-      showToast(id ? 'Proyecto actualizado ✓' : 'Proyecto creado ✓');
+      let result;
+      if (id) {
+        result = await DBProyectos.update(id, payload);
+        if (result) showToast('Proyecto actualizado ✓');
+      } else {
+        result = await DBProyectos.insert(payload);
+        if (result) showToast('Proyecto creado ✓');
+      }
+      if (!result) { showToast('Error al guardar en Supabase', 'error'); return; }
+      await Cache.reload('proyectos');
       this.render();
     },
     async delete(id) {
-      const item = DB.get(DATA_KEYS.PROYECTOS,[]).find(i => i.id === id);
+      const item = Cache.proyectos.find(i => i.id === id);
       const ok = await confirmDialog(`¿Eliminar "${item?.titulo || 'este proyecto'}"? Esta acción no se puede deshacer.`, 'Eliminar proyecto');
       if (!ok) return;
-      DB.set(DATA_KEYS.PROYECTOS, DB.get(DATA_KEYS.PROYECTOS,[]).filter(i => i.id !== id));
+      await DBProyectos.remove(id);
       showToast('Proyecto eliminado');
+      await Cache.reload('proyectos');
       this.render();
     },
-    toggleStar(id) {
-      const items = DB.get(DATA_KEYS.PROYECTOS, []);
-      const item  = items.find(i => i.id === id);
+    async toggleStar(id) {
+      const item = Cache.proyectos.find(i => i.id === id);
       if (!item) return;
-      item.destacado = !item.destacado;
-      DB.set(DATA_KEYS.PROYECTOS, items);
-      showToast(item.destacado ? 'Marcado como destacado ⭐' : 'Quitado de destacados');
+      await DBProyectos.update(id, { destacado: !item.destacado });
+      showToast(!item.destacado ? 'Marcado como destacado ⭐' : 'Quitado de destacados');
+      await Cache.reload('proyectos');
       this.render();
     },
     bindSearch() {
@@ -397,7 +420,7 @@ const Sections = {
   recursos: {
     _filter: '',
     render() {
-      const items = DB.get(DATA_KEYS.RECURSOS, []);
+      const items = Cache.recursos;
       const q = this._filter.toLowerCase();
       const list = q ? items.filter(i =>
         i.titulo.toLowerCase().includes(q) || (i.descripcion||'').toLowerCase().includes(q) || (i.tag||'').toLowerCase().includes(q)
@@ -422,8 +445,7 @@ const Sections = {
         </tr>`).join('');
     },
     async openForm(id = null) {
-      const items = DB.get(DATA_KEYS.RECURSOS, []);
-      const item  = id ? items.find(i => i.id === id) : null;
+      const item = id ? Cache.recursos.find(i => i.id === id) : null;
       const tagsOpts = REC_TAGS.map(t => `<option value="${t}"${item?.tag===t?' selected':''}>${t}</option>`).join('');
       const body = `
         <div class="ap-form-grid">
@@ -459,8 +481,7 @@ const Sections = {
       if (!ok) return;
       const titulo = $('mTitulo').value.trim();
       if (!titulo) { showToast('El nombre es obligatorio', 'error'); return; }
-      const data = {
-        id:          id || generateId(),
+      const payload = {
         titulo,
         descripcion: $('mDesc').value.trim(),
         tag:         $('mTag').value,
@@ -469,27 +490,33 @@ const Sections = {
         horario:     $('mHorario').value.trim(),
         destacado:   $('mDestacado').checked
       };
-      if (id) { const idx = items.findIndex(i => i.id === id); if (idx !== -1) items[idx] = data; }
-      else items.unshift(data);
-      DB.set(DATA_KEYS.RECURSOS, items);
-      showToast(id ? 'Recurso actualizado ✓' : 'Recurso creado ✓');
+      let result;
+      if (id) {
+        result = await DBRecursos.update(id, payload);
+        if (result) showToast('Recurso actualizado ✓');
+      } else {
+        result = await DBRecursos.insert(payload);
+        if (result) showToast('Recurso creado ✓');
+      }
+      if (!result) { showToast('Error al guardar en Supabase', 'error'); return; }
+      await Cache.reload('recursos');
       this.render();
     },
     async delete(id) {
-      const item = DB.get(DATA_KEYS.RECURSOS,[]).find(i => i.id === id);
+      const item = Cache.recursos.find(i => i.id === id);
       const ok = await confirmDialog(`¿Eliminar "${item?.titulo || 'este recurso'}"?`, 'Eliminar recurso');
       if (!ok) return;
-      DB.set(DATA_KEYS.RECURSOS, DB.get(DATA_KEYS.RECURSOS,[]).filter(i => i.id !== id));
+      await DBRecursos.remove(id);
       showToast('Recurso eliminado');
+      await Cache.reload('recursos');
       this.render();
     },
-    toggleStar(id) {
-      const items = DB.get(DATA_KEYS.RECURSOS, []);
-      const item  = items.find(i => i.id === id);
+    async toggleStar(id) {
+      const item = Cache.recursos.find(i => i.id === id);
       if (!item) return;
-      item.destacado = !item.destacado;
-      DB.set(DATA_KEYS.RECURSOS, items);
-      showToast(item.destacado ? 'Marcado como destacado ⭐' : 'Quitado de destacados');
+      await DBRecursos.update(id, { destacado: !item.destacado });
+      showToast(!item.destacado ? 'Marcado como destacado ⭐' : 'Quitado de destacados');
+      await Cache.reload('recursos');
       this.render();
     },
     bindSearch() {
@@ -502,7 +529,7 @@ const Sections = {
   galeria: {
     _filter: '', _cat: '',
     render() {
-      const items = DB.get(DATA_KEYS.GALERIA, []);
+      const items = Cache.galeria;
       const q = this._filter.toLowerCase();
       const list = items.filter(i =>
         (!q || i.titulo.toLowerCase().includes(q) || (i.descripcion||'').toLowerCase().includes(q)) &&
@@ -539,8 +566,7 @@ const Sections = {
       bindThumbFallbacks(tbody);
     },
     async openForm(id = null) {
-      const items = DB.get(DATA_KEYS.GALERIA, []);
-      const item  = id ? items.find(i => i.id === id) : null;
+      const item = id ? Cache.galeria.find(i => i.id === id) : null;
       const catOpts = GALERIA_CATS.map(c => `<option value="${c}"${item?.categoria===c?' selected':''}>${c}</option>`).join('');
       const isVid = item?.type === 'video';
       const body = `
@@ -582,7 +608,7 @@ const Sections = {
               </div>
               <div class="form-group">
                 <label>URL completa del video <span style="color:var(--color-error)">*</span></label>
-                <input type="url" id="mVideoUrl" value="${escapeHtml(item?.videoUrl||item?.videoId||'')}" placeholder="https://youtube.com/watch?v=...">
+                <input type="url" id="mVideoUrl" value="${escapeHtml(item?.video_url||item?.videoUrl||'')}" placeholder="https://youtube.com/watch?v=...">
                 <small style="color:var(--color-text-muted)">Pega la URL completa — el ID se extrae automáticamente</small>
               </div>
             </div>
@@ -614,7 +640,6 @@ const Sections = {
       }
 
       const data = {
-        id:          id || generateId(),
         titulo,
         descripcion: $('mDesc').value.trim(),
         categoria:   $('mCat').value,
@@ -622,30 +647,36 @@ const Sections = {
         url:         urlVal,
         destacado:   $('mDestacado').checked,
         ...(isVideoNow
-          ? { type: 'video', provider: $('mProvider').value, videoId, videoUrl }
-          : { type: null,    provider: null,                 videoId: null, videoUrl: null })
+          ? { type: 'video', provider: $('mProvider').value, video_id: videoId, video_url: videoUrl }
+          : { type: null,    provider: null,                 video_id: null,    video_url: null })
       };
-      if (id) { const idx = items.findIndex(i => i.id === id); if (idx !== -1) items[idx] = data; }
-      else items.unshift(data);
-      DB.set(DATA_KEYS.GALERIA, items);
-      showToast(id ? 'Imagen actualizada ✓' : 'Imagen agregada ✓');
+      let result;
+      if (id) {
+        result = await DBGaleria.update(id, data);
+        if (result) showToast('Imagen actualizada ✓');
+      } else {
+        result = await DBGaleria.insert(data);
+        if (result) showToast('Imagen agregada ✓');
+      }
+      if (!result) { showToast('Error al guardar en Supabase', 'error'); return; }
+      await Cache.reload('galeria');
       this.render();
     },
     async delete(id) {
-      const item = DB.get(DATA_KEYS.GALERIA,[]).find(i => i.id === id);
+      const item = Cache.galeria.find(i => i.id === id);
       const ok = await confirmDialog(`¿Eliminar "${item?.titulo || 'esta imagen'}"?`, 'Eliminar imagen');
       if (!ok) return;
-      DB.set(DATA_KEYS.GALERIA, DB.get(DATA_KEYS.GALERIA,[]).filter(i => i.id !== id));
+      await DBGaleria.remove(id);
       showToast('Imagen eliminada');
+      await Cache.reload('galeria');
       this.render();
     },
-    toggleStar(id) {
-      const items = DB.get(DATA_KEYS.GALERIA, []);
-      const item  = items.find(i => i.id === id);
+    async toggleStar(id) {
+      const item = Cache.galeria.find(i => i.id === id);
       if (!item) return;
-      item.destacado = !item.destacado;
-      DB.set(DATA_KEYS.GALERIA, items);
-      showToast(item.destacado ? 'Marcado como destacado ⭐' : 'Quitado de destacados');
+      await DBGaleria.update(id, { destacado: !item.destacado });
+      showToast(!item.destacado ? 'Marcado como destacado ⭐' : 'Quitado de destacados');
+      await Cache.reload('galeria');
       this.render();
     },
     bindSearch() {
@@ -666,7 +697,7 @@ const Sections = {
   videos: {
     _filter: '', _cat: '',
     render() {
-      const items = DB.get(DATA_KEYS.VIDEOS, []);
+      const items = Cache.videos;
       const q = this._filter.toLowerCase();
       const list = items.filter(i =>
         (!q || i.titulo.toLowerCase().includes(q) || (i.descripcion||'').toLowerCase().includes(q)) &&
@@ -696,8 +727,7 @@ const Sections = {
       bindThumbFallbacks(tbody);
     },
     async openForm(id = null) {
-      const items = DB.get(DATA_KEYS.VIDEOS, []);
-      const item  = id ? items.find(i => i.id === id) : null;
+      const item = id ? Cache.videos.find(i => i.id === id) : null;
       const catOpts = VIDEO_CATS.map(c => `<option value="${c}"${item?.categoria===c?' selected':''}>${c}</option>`).join('');
       const body = `
         <div class="ap-form-grid">
@@ -723,7 +753,7 @@ const Sections = {
           </div>
           <div class="form-group full-width">
             <label>URL del video <span style="color:var(--color-error)">*</span></label>
-            <input type="url" id="mVideoUrl" value="${escapeHtml(item?.videoUrl||'')}" placeholder="https://youtube.com/watch?v=... · https://vimeo.com/... · URL de Facebook">
+            <input type="url" id="mVideoUrl" value="${escapeHtml(item?.video_url||item?.videoUrl||'')}" placeholder="https://youtube.com/watch?v=... · https://vimeo.com/... · URL de Facebook">
             <small style="color:var(--color-text-muted)">Pega la URL completa — el ID se extrae automáticamente</small>
           </div>
           <div class="form-group full-width">
@@ -752,45 +782,50 @@ const Sections = {
 
       const provider = $('mProvider').value;
       const videoId  = extractVideoId(videoUrl, provider);
-      if (!videoId)  { showToast('No se pudo extraer el ID del video. Verifica la URL.', 'error'); return; }
+      if (!videoId) { showToast('No se pudo extraer el ID del video. Verifica la URL.', 'error'); return; }
 
-      const thumbVal = $('mThumb').value.trim();
+      const thumbVal  = $('mThumb').value.trim();
       const thumbnail = thumbVal || (provider === 'youtube' ? getYouTubeThumbnail(videoId) : '');
 
-      const data = {
-        id:          id || generateId(),
+      const payload = {
         titulo,
         descripcion: $('mDesc').value.trim(),
         categoria:   $('mCat').value,
         provider,
-        videoId,
-        videoUrl,
+        video_url:   videoUrl,
+        video_id:    videoId,
         thumbnail,
         duration:    $('mDuration').value.trim(),
         fecha:       $('mFecha').value || new Date().toISOString().slice(0,10),
         destacado:   $('mDestacado').checked
       };
-      if (id) { const idx = items.findIndex(i => i.id === id); if (idx !== -1) items[idx] = data; }
-      else items.unshift(data);
-      DB.set(DATA_KEYS.VIDEOS, items);
-      showToast(id ? 'Video actualizado ✓' : 'Video agregado ✓');
+      let result;
+      if (id) {
+        result = await DBVideos.update(id, payload);
+        if (result) showToast('Video actualizado ✓');
+      } else {
+        result = await DBVideos.insert(payload);
+        if (result) showToast('Video agregado ✓');
+      }
+      if (!result) { showToast('Error al guardar en Supabase', 'error'); return; }
+      await Cache.reload('videos');
       this.render();
     },
     async delete(id) {
-      const item = DB.get(DATA_KEYS.VIDEOS,[]).find(i => i.id === id);
+      const item = Cache.videos.find(i => i.id === id);
       const ok = await confirmDialog(`¿Eliminar "${item?.titulo || 'este video'}"?`, 'Eliminar video');
       if (!ok) return;
-      DB.set(DATA_KEYS.VIDEOS, DB.get(DATA_KEYS.VIDEOS,[]).filter(i => i.id !== id));
+      await DBVideos.remove(id);
       showToast('Video eliminado');
+      await Cache.reload('videos');
       this.render();
     },
-    toggleStar(id) {
-      const items = DB.get(DATA_KEYS.VIDEOS, []);
-      const item  = items.find(i => i.id === id);
+    async toggleStar(id) {
+      const item = Cache.videos.find(i => i.id === id);
       if (!item) return;
-      item.destacado = !item.destacado;
-      DB.set(DATA_KEYS.VIDEOS, items);
-      showToast(item.destacado ? 'Marcado como destacado ⭐' : 'Quitado de destacados');
+      await DBVideos.update(id, { destacado: !item.destacado });
+      showToast(!item.destacado ? 'Marcado como destacado ⭐' : 'Quitado de destacados');
+      await Cache.reload('videos');
       this.render();
     },
     bindSearch() {
@@ -803,11 +838,9 @@ const Sections = {
   // ── CONFIGURACIÓN ──────────────────────────────────────────────────────────
   configuracion: {
     render() {
-      // Mostrar email actual
-      const cfg = DB.get(DATA_KEYS.CONFIG, {});
-      const email = cfg.admin?.email || 'admin@municipio.local';
+      const user = Auth.getUser();
       const hint = $('cfgCurrentEmail');
-      if (hint) hint.textContent = `Email actual: ${email}`;
+      if (hint) hint.textContent = `Email actual: ${user?.email || '—'}`;
     },
     bindForms() {
       $('formCredenciales').addEventListener('submit', async e => {
@@ -819,26 +852,26 @@ const Sections = {
         if (email && !isValidEmail(email)) { showToast('Email inválido', 'error'); return; }
         if (pass && pass.length < 8) { showToast('La contraseña debe tener al menos 8 caracteres', 'error'); return; }
         if (pass && pass !== confirm) { showToast('Las contraseñas no coinciden', 'error'); return; }
-        // Update config in storage
-        const cfg = DB.get(DATA_KEYS.CONFIG, {});
-        if (!cfg.admin) cfg.admin = {};
-        if (email) cfg.admin.email    = email;
-        if (pass)  cfg.admin.password = pass;
-        DB.set(DATA_KEYS.CONFIG, cfg);
-        showToast('Credenciales actualizadas ✓ — cierra sesión para aplicar');
+        // Actualizar en Supabase Auth
+        const { supabase } = await import('./supabase.js');
+        const updates = {};
+        if (email) updates.email    = email;
+        if (pass)  updates.password = pass;
+        const { error } = await supabase.auth.updateUser(updates);
+        if (error) { showToast('Error: ' + error.message, 'error'); return; }
+        showToast('Credenciales actualizadas ✓');
         $('formCredenciales').reset();
         this.render();
       });
 
-      $('btnExport').addEventListener('click', () => {
+      $('btnExport').addEventListener('click', async () => {
         const data = {
           exportedAt: new Date().toISOString(),
-          proyectos:  DB.get(DATA_KEYS.PROYECTOS, []),
-          recursos:   DB.get(DATA_KEYS.RECURSOS,  []),
-          galeria:    DB.get(DATA_KEYS.GALERIA,   []),
-          videos:     DB.get(DATA_KEYS.VIDEOS,    []),
-          content:    DB.get(DATA_KEYS.CONTENT,   {}),
-          config:     DB.get(DATA_KEYS.CONFIG,    {})
+          proyectos:  Cache.proyectos,
+          recursos:   Cache.recursos,
+          galeria:    Cache.galeria,
+          videos:     Cache.videos,
+          content:    Cache.content
         };
         exportAsJSON(data, `incluyeme-backup-${new Date().toISOString().slice(0,10)}.json`);
         showToast('Backup exportado ✓');
@@ -848,14 +881,14 @@ const Sections = {
         try {
           const imported = await importJSON();
           if (!imported || typeof imported !== 'object') throw new Error('Archivo inválido');
-          // Support both raw and wrapped format
           const d = imported.data || imported;
-          if (d.proyectos) DB.set(DATA_KEYS.PROYECTOS, d.proyectos);
-          if (d.recursos)  DB.set(DATA_KEYS.RECURSOS,  d.recursos);
-          if (d.galeria)   DB.set(DATA_KEYS.GALERIA,   d.galeria);
-          if (d.videos)    DB.set(DATA_KEYS.VIDEOS,    d.videos);
-          if (d.content)   DB.set(DATA_KEYS.CONTENT,   d.content);
-          if (d.config)    DB.set(DATA_KEYS.CONFIG,    d.config);
+          const ops = [];
+          if (d.proyectos) d.proyectos.forEach(p => ops.push(DBProyectos.insert(p)));
+          if (d.recursos)  d.recursos.forEach(r  => ops.push(DBRecursos.insert(r)));
+          if (d.galeria)   d.galeria.forEach(g   => ops.push(DBGaleria.insert(g)));
+          if (d.videos)    d.videos.forEach(v    => ops.push(DBVideos.insert(v)));
+          if (d.content)   ops.push(DBContenido.set(d.content));
+          await Promise.all(ops);
           showToast('Datos importados ✓ — recargando...');
           setTimeout(() => location.reload(), 1500);
         } catch (err) {
@@ -869,14 +902,7 @@ const Sections = {
           '⚠️ Restaurar datos por defecto'
         );
         if (!ok) return;
-        const d = getDefaultData();
-        DB.set(DATA_KEYS.PROYECTOS, d.proyectos);
-        DB.set(DATA_KEYS.RECURSOS,  d.recursos);
-        DB.set(DATA_KEYS.GALERIA,   d.galeria);
-        DB.set(DATA_KEYS.VIDEOS,    d.videos);
-        DB.set(DATA_KEYS.CONTENT,   d.content);
-        showToast('Datos restaurados ✓ — recargando...');
-        setTimeout(() => location.reload(), 1500);
+        showToast('Restaurar defaults no disponible con Supabase — usa el dashboard de Supabase para limpiar tablas.', 'warning');
       });
     }
   }
@@ -947,12 +973,6 @@ async function init() {
   bindTheme();
   bindTableActions();
 
-  // Ensure default data exists in storage
-  const { ensureDefaults } = await import('./data-defaults.js');
-  const { initStorage } = await import('./storage.js');
-  initStorage();
-  ensureDefaults(Storage, DATA_KEYS);
-
   // Bind static forms
   Sections.contenido.bindForms();
   Sections.configuracion.bindForms();
@@ -965,17 +985,26 @@ async function init() {
   $('apLogoutBtn').addEventListener('click', async () => {
     const ok = await confirmDialog('¿Cerrar sesión?', 'Cerrar sesión');
     if (!ok) return;
-    Auth.logout();
+    await Auth.logout();
     window.location.href = 'index.html';
   });
 
-  // Auth check
-  if (Auth.isAuthenticated()) {
+  // Load Supabase session first, then check auth
+  await Auth.loadSession();
+
+  const showPanel = async () => {
     $('apLoginWrap').hidden = true;
     $('apContent').hidden   = false;
+    $('apLogoutBtn').style.display = '';
+    // Cargar todos los datos desde Supabase antes de renderizar
+    await Cache.load();
     renderUserInfo();
     Nav.init();
     Nav.go('dashboard');
+  };
+
+  if (Auth.isAuthenticated()) {
+    showPanel();
   } else {
     $('apLoginWrap').hidden = false;
     $('apContent').hidden   = true;
@@ -993,15 +1022,7 @@ async function init() {
       const ok = await Auth.login(email, pass);
       if (ok) {
         btn.innerHTML = '<i class="fas fa-check"></i> Acceso concedido';
-        setTimeout(() => {
-          $('apLoginWrap').hidden = false; // keep hidden by CSS
-          $('apLoginWrap').hidden = true;
-          $('apContent').hidden   = false;
-          $('apLogoutBtn').style.display = '';
-          renderUserInfo();
-          Nav.init();
-          Nav.go('dashboard');
-        }, 400);
+        setTimeout(showPanel, 400);
       } else {
         errEl.textContent = 'Email o contraseña incorrectos.';
         btn.disabled = false;

@@ -81,6 +81,9 @@
       <button class="mobile-nav-btn" data-tab="galeria">
         <i class="fas fa-images" aria-hidden="true"></i> Galería
       </button>
+      <button class="mobile-nav-btn" data-tab="videos">
+        <i class="fas fa-video" aria-hidden="true"></i> Videos
+      </button>
       <a class="mobile-nav-link" href="historia.html">
         <i class="fas fa-landmark" aria-hidden="true"></i> Historia
       </a>
@@ -104,6 +107,9 @@
       </button>
       <button class="nav-btn" data-tab="galeria" role="tab" aria-selected="false">
         <i class="fas fa-images" aria-hidden="true"></i> Galería
+      </button>
+      <button class="nav-btn" data-tab="videos" role="tab" aria-selected="false">
+        <i class="fas fa-video" aria-hidden="true"></i> Videos
       </button>
       <a class="nav-link-page" href="historia.html">
         <i class="fas fa-landmark" aria-hidden="true"></i> Historia
@@ -602,10 +608,14 @@
     const submitBtn= document.getElementById('gateSubmit');
     const adminBtn = document.querySelector('a[href="admin.html"]');
 
+    // Pre-load Supabase session so isAuthenticated() works immediately
+    Auth.loadSession();
+
     // Open modal instead of navigating directly
-    adminBtn?.addEventListener('click', e => {
+    adminBtn?.addEventListener('click', async e => {
       e.preventDefault();
-      // If already authenticated, go straight
+      // Ensure session is loaded before checking
+      await Auth.loadSession();
       if (Auth.isAuthenticated()) {
         navigateToAdmin();
         return;
@@ -646,7 +656,6 @@
 
       if (ok) {
         submitBtn.innerHTML = '<i class="fas fa-check"></i> Acceso concedido';
-        // Small pause so user sees the success state, then transition
         setTimeout(navigateToAdmin, 500);
       } else {
         errorEl.textContent = 'Email o contraseña incorrectos.';
@@ -657,7 +666,6 @@
     });
 
     function navigateToAdmin() {
-      // Smooth page-exit then redirect
       document.body.classList.add('page-exit');
       setTimeout(() => { window.location.href = 'admin.html'; }, 420);
     }

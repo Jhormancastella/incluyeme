@@ -105,6 +105,17 @@ export const Navigation = {
     
     // Dispatch event
     document.dispatchEvent(new CustomEvent('nav:tabChanged', { detail: { tabId } }));
+
+    // Mover foco al encabezado de la sección activa para evitar
+    // el warning de aria-hidden con foco retenido en sección oculta
+    const activeSection = document.getElementById(tabId);
+    if (activeSection) {
+      const heading = activeSection.querySelector('h2, h3, [tabindex="-1"]');
+      if (heading) {
+        heading.setAttribute('tabindex', '-1');
+        heading.focus({ preventScroll: true });
+      }
+    }
   },
   
   // Get current tab
